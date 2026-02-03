@@ -2,7 +2,6 @@ from db import get_enabled_sources, save_news
 from sources.rss import parse_rss
 from sources.site import parse_site
 
-# Попробуем импортировать Telegram парсер
 try:
     from sources.telegram import parse_telegram
     TELEGRAM_ENABLED = True
@@ -40,14 +39,13 @@ def run():
                 print("Ничего не найдено для источника:", source.get("name"))
                 continue
 
-            # Сохраняем все новости
             for item in items:
                 try:
                     save_news(item)
                     total_saved += 1
                     print("✅ Сохранили:", item["title"][:80])
                 except Exception as e:
-                    print("❌ Ошибка при сохранении новости:", e)
+                    print("❌ Исключение при сохранении новости:", e)
 
         except Exception as e:
             print("❌ Ошибка при парсинге источника:", source.get("name"), e)
