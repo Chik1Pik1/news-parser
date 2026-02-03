@@ -1,12 +1,39 @@
 from db import get_enabled_sources, save_news
 from sources.rss import parse_rss
 from sources.site import parse_site
+import requests
+from bs4 import BeautifulSoup
 
 try:
     from sources.telegram import parse_telegram
     TELEGRAM_ENABLED = True
 except ImportError:
     TELEGRAM_ENABLED = False
+
+def fetch_full_text(url):
+    try:
+        r = requests.get(url, timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        # Ищем основной контейнер статьи
+        article = soup.find("article")
+        if not article:
+            # Если нет <article>, берём самый длинный <div>
+            divs = soup.find_all("div")
+            if divs:
+                article = max(divs, key=lambda d: len(d.get_text()))
+            else:
+                return None
+
+        # Удаляем скрипты и стили
+        for tag in article(["script", "style", "aside", "nav"]):
+            tag.decompose()
+
+        text = article.get_text(separator="\n", strip=True)
+        return text
+    except Exception as e:
+        print("❌ Не удалось получить полный текст:", url, e)
+        return None
 
 def run():
     sources = get_enabled_sources()
@@ -41,6 +68,18 @@ def run():
 
             for item in items:
                 try:
+                    # Получаем полный текст для RSS и сайтов
+                    if source["type"] in ["rss", "site"] and item.get("url"):
+                        full_text = fetch_full_text(item["url"])
+                        if full_text:
+                            item["content"] = full_text
+                        else:
+                            item["content"] = item.get("summary", "")
+
+                    # Для Telegram используем текст поста
+                    elif source["type"] == "telegram":
+                        item["content"] = item.get("summary", "")
+
                     save_news(item)
                     total_saved += 1
                     print("✅ Сохранили:", item["title"][:80])
