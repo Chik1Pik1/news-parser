@@ -4,6 +4,7 @@ from sources.site import parse_site
 import requests
 from bs4 import BeautifulSoup
 
+# Telegram-парсер (если установлен)
 try:
     from sources.telegram import parse_telegram
     TELEGRAM_ENABLED = True
@@ -11,14 +12,12 @@ except ImportError:
     TELEGRAM_ENABLED = False
 
 def fetch_full_text(url):
-    """
-    Получаем полный текст новости с сайта по ссылке
-    """
+    """Получаем полный текст новости с сайта по ссылке"""
     try:
         r = requests.get(url, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # Ищем основной контейнер статьи
+        # Сначала ищем <article>, если нет — самый длинный <div>
         article = soup.find("article")
         if not article:
             divs = soup.find_all("div")
@@ -73,10 +72,7 @@ def run():
                     # Для RSS и сайтов получаем полный текст
                     if source["type"] in ["rss", "site"] and item.get("url"):
                         full_text = fetch_full_text(item["url"])
-                        if full_text:
-                            item["content"] = full_text
-                        else:
-                            item["content"] = item.get("summary", "")
+                        item["content"] = full_text or item.get("summary", "")
                     # Для Telegram используем текст поста
                     elif source["type"] == "telegram":
                         item["content"] = item.get("summary", "")
