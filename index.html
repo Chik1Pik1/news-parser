@@ -1,113 +1,64 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Новости</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Supabase JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <style>
     body {
-      font-family: Arial, sans-serif;
       margin: 0;
-      padding: 0;
-      background: linear-gradient(135deg, #1f1c2c, #928dab);
-      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      background: linear-gradient(135deg, #0f172a, #020617);
       color: #fff;
+      padding: 20px;
     }
 
     h1 {
       text-align: center;
-      padding: 20px;
-      font-size: 2em;
-      text-shadow: 1px 1px 5px rgba(0,0,0,0.3);
+      margin-bottom: 20px;
     }
 
-    #news-container {
+    .news-list {
+      max-width: 800px;
+      margin: 0 auto;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      gap: 20px;
-      padding: 20px;
+      gap: 16px;
     }
 
-    .news {
+    .news-card {
+      background: rgba(255, 255, 255, 0.08);
       backdrop-filter: blur(10px);
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 20px;
-      padding: 20px;
-      max-width: 600px;
-      width: 100%;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
-      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      border-radius: 16px;
+      padding: 16px;
+      border: 1px solid rgba(255,255,255,0.15);
+      box-shadow: 0 4px 30px rgba(0,0,0,0.2);
     }
 
-    .news:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+    .news-card h3 {
+      margin: 0 0 10px 0;
+      font-size: 18px;
     }
 
-    .title a {
-      color: #fff;
+    .news-card a {
+      color: #60a5fa;
       text-decoration: none;
-      font-weight: bold;
-      font-size: 1.2em;
     }
 
-    .summary {
-      margin-top: 10px;
-      font-size: 1em;
-    }
-
-    .meta {
-      margin-top: 10px;
-      font-size: 0.8em;
-      color: #ccc;
-    }
-
-    img {
-      max-width: 100%;
-      margin-top: 10px;
-      border-radius: 15px;
+    .news-card small {
+      opacity: 0.7;
     }
   </style>
 </head>
 <body>
-  <h1>Новости</h1>
-  <div id="news-container"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/supabase.min.js"></script>
-  <script>
-    const supabaseUrl = 'https://rltppxkgyasyfkftintn.supabase.co';
-    const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJsdHBweGtneWFzeWZrZnRpbnRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwNTM0NDAsImV4cCI6MjA4NTYyOTQ0MH0.98RP1Ci9UFkjhKbi1woyW5dbRbXJ8qNdopM1aJMSdf4';
+  <h1>📰 Лента новостей</h1>
+  <div class="news-list" id="news"></div>
 
-    const supabase = supabaseJs.createClient(supabaseUrl, supabaseAnonKey);
-
-    async function fetchNews() {
-      const { data, error } = await supabase
-        .from('news')
-        .select('title, summary, url, published_at, category_id, is_nsfw')
-        .order('published_at', { ascending: false })
-        .limit(20);
-
-      if (error) {
-        console.error('Ошибка Supabase:', error);
-        return;
-      }
-
-      const container = document.getElementById('news-container');
-      container.innerHTML = '';
-
-      data.forEach(item => {
-        const div = document.createElement('div');
-        div.className = 'news';
-        div.innerHTML = `
-          <div class="title"><a href="${item.url}" target="_blank">${item.title}</a></div>
-          <div class="summary">${item.summary}</div>
-          <div class="meta">Дата: ${item.published_at} | NSFW: ${item.is_nsfw}</div>
-        `;
-        container.appendChild(div);
-      });
-    }
-
-    fetchNews();
-  </script>
+  <script src="main.js"></script>
 </body>
 </html>
