@@ -11,6 +11,9 @@ except ImportError:
     TELEGRAM_ENABLED = False
 
 def fetch_full_text(url):
+    """
+    Получаем полный текст новости с сайта по ссылке
+    """
     try:
         r = requests.get(url, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
@@ -18,14 +21,13 @@ def fetch_full_text(url):
         # Ищем основной контейнер статьи
         article = soup.find("article")
         if not article:
-            # Если нет <article>, берём самый длинный <div>
             divs = soup.find_all("div")
             if divs:
                 article = max(divs, key=lambda d: len(d.get_text()))
             else:
                 return None
 
-        # Удаляем скрипты и стили
+        # Удаляем лишние теги
         for tag in article(["script", "style", "aside", "nav"]):
             tag.decompose()
 
@@ -68,14 +70,13 @@ def run():
 
             for item in items:
                 try:
-                    # Получаем полный текст для RSS и сайтов
+                    # Для RSS и сайтов получаем полный текст
                     if source["type"] in ["rss", "site"] and item.get("url"):
                         full_text = fetch_full_text(item["url"])
                         if full_text:
                             item["content"] = full_text
                         else:
                             item["content"] = item.get("summary", "")
-
                     # Для Telegram используем текст поста
                     elif source["type"] == "telegram":
                         item["content"] = item.get("summary", "")
