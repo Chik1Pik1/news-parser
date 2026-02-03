@@ -1,89 +1,96 @@
 import feedparser
-import html
-from datetime import datetime
+import requests
+from bs4 import BeautifulSoup
 from supabase import create_client, Client
+from datetime import datetime
 import hashlib
 
 # --- Supabase ---
 SUPABASE_URL = "https://rltppxkgyasyfkftintn.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJsdHBweGtneWFzeWZrZnRpbnRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwNTM0NDAsImV4cCI6MjA4NTYyOTQ0MH0.98RP1Ci9UFkjhKbi1woyW5dbRbXJ8qNdopM1aJMSdf4"
-
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-# --- Категории ---
-CATEGORIES = {
-    "war": "Военные новости",
-    "economy": "Экономика",
-    "crypto": "Криптовалюта",
-    "world": "Мир",
-    "tech": "Технологии"
+# --- Настройки RSS ---
+RSS_SOURCES = {
+    "war": [
+        "https://ria.ru/export/rss2/defense.xml",
+        "https://tass.ru/rss/v2.xml"
+    ],
+    "economy": [
+        "https://www.vedomosti.ru/rss/news",
+        "https://www.rbc.ru/rss/newsline.xml"
+    ],
+    "crypto": [
+        "https://www.rbc.ru/rss/crypto.xml"
+    ],
+    "world": [
+        "https://www.vesti.ru/vesti.rss"
+    ],
+    "tech": [
+        "https://www.cnews.ru/rss/news/"
+    ]
 }
 
-# --- RSS источники ---
-RSS_SOURCES = [
-    {"name": "РИА Новости", "url": "https://ria.ru/export/rss2/all.xml", "category": "world"},
-    {"name": "ТАСС", "url": "https://tass.ru/rss/v2.xml", "category": "world"},
-    {"name": "РБК", "url": "https://www.rbc.ru/rss/newsline.xml", "category": "economy"},
-    {"name": "Ведомости", "url": "https://www.vedomosti.ru/rss/news", "category": "economy"},
-    {"name": "Вести", "url": "https://www.vesti.ru/vesti.rss", "category": "war"},
-    {"name": "CNews", "url": "https://www.cnews.ru/news/rss", "category": "tech"},
-    {"name": "Lenta.ru", "url": "https://lenta.ru/rss/news", "category": "crypto"},
-]
+MAX_TEXT_LENGTH = 300  # длина новости для показа
 
-def summarize_text(text, max_len=300):
-    """Обрезаем текст до короткой сути и убираем HTML теги"""
-    text = html.unescape(text)
-    text = text.replace("\n", " ").replace("\r", " ")
-    if len(text) > max_len:
-        return text[:max_len].rstrip() + "..."
+# --- Функции ---
+def clean_html(raw_html):
+    """Убираем теги HTML и лишние пробелы"""
+    if not raw_html:
+        return ""
+    soup = BeautifulSoup(raw_html, "html.parser")
+    text = soup.get_text(separator=" ", strip=True)
+    if len(text) > MAX_TEXT_LENGTH:
+        text = text[:MAX_TEXT_LENGTH] + "..."
     return text
 
-def generate_hash(title, url):
-    """Уникальный хэш для новости"""
-    return hashlib.md5((title + (url or "")).encode("utf-8")).hexdigest()
+def generate_hash(title, summary, url):
+    """Генерируем хэш для уникальности новости"""
+    raw = (title or "") + (summary or "") + (url or "")
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
-def save_news_to_db(news_item):
-    """Сохраняем новость в Supabase"""
-    try:
-        # конвертируем datetime в строку
-        if isinstance(news_item.get("created_at"), datetime):
-            news_item["created_at"] = news_item["created_at"].isoformat()
-        response = supabase.table("news").insert(news_item).execute()
-        if response.error:
-            print(f"❌ Ошибка при сохранении: {response.error}")
-        else:
-            print(f"✅ Сохранено: {news_item['title'][:50]}...")
-    except Exception as e:
-        print(f"❌ Ошибка при сохранении: {e}")
+def fetch_and_save_news():
+    total_saved = 0
+    for category_slug, feeds in RSS_SOURCES.items():
+        for url in feeds:
+            print(f"Парсим RSS: {url}")
+            try:
+                feed = feedparser.parse(url)
+            except Exception as e:
+                print("❌ Ошибка при парсинге:", e)
+                continue
 
-def parse_rss(source):
-    print(f"Парсим RSS: {source['url']}")
-    feed = feedparser.parse(source["url"])
-    saved_count = 0
-    for entry in feed.entries:
-        title = entry.get("title", "Без заголовка")
-        description = summarize_text(entry.get("description", "") or entry.get("summary", ""))
-        url = entry.get("link")
-        created_at = entry.get("published_parsed")
-        if created_at:
-            created_at = datetime(*created_at[:6])
-        else:
-            created_at = datetime.utcnow()
-        news_item = {
-            "title": title,
-            "summary": description,
-            "url": url or "https://example.com",  # чтобы не было null
-            "category_slug": source["category"],
-            "hash": generate_hash(title, url),
-            "created_at": created_at,
-        }
-        save_news_to_db(news_item)
-        saved_count += 1
-    print(f"Парсинг завершён. Сохранено новостей: {saved_count}")
+            news_to_save = []
+            for entry in feed.entries:
+                title = entry.get("title", "").strip()
+                link = entry.get("link", "").strip()
+                summary = clean_html(entry.get("summary", ""))
+                pub_date = entry.get("published_parsed") or entry.get("updated_parsed")
+                if pub_date:
+                    pub_date = datetime(*pub_date[:6])
+                else:
+                    pub_date = datetime.utcnow()
 
-def main():
-    for source in RSS_SOURCES:
-        parse_rss(source)
+                news_item = {
+                    "title": title,
+                    "url": link,
+                    "summary": summary,
+                    "category_slug": category_slug,
+                    "hash": generate_hash(title, summary, link),
+                    "published_at": pub_date.isoformat()
+                }
+
+                news_to_save.append(news_item)
+
+            if news_to_save:
+                response = supabase.table("news").insert(news_to_save).execute()
+                if response.status_code >= 400:
+                    print("❌ Ошибка при сохранении:", response.data)
+                else:
+                    total_saved += len(news_to_save)
+                    print(f"✅ Сохранено новостей: {len(news_to_save)}")
+    print("Парсинг завершён. Всего сохранено новостей:", total_saved)
+
 
 if __name__ == "__main__":
-    main()
+    fetch_and_save_news()
