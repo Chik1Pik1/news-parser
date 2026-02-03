@@ -46,13 +46,12 @@ def run():
                 print("Ничего не найдено для источника:", source.get("name"))
                 continue
 
-            # Сохраняем все новости
+            # 🔹 Сохраняем новости
             for item in items:
                 try:
                     save_news(item)
-                    print("Сохранили:", item["title"][:80])
                 except Exception as e:
-                    print("Ошибка при сохранении новости:", e)
+                    print("Ошибка при save_news:", e)
                     traceback.print_exc()
 
         except Exception as e:
