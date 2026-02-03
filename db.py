@@ -1,14 +1,14 @@
-import os
 from supabase import create_client
+import os
 
-SUPABASE_URL = os.getenv("https://rltppxkgyasyfkftintn.supabase.co")
-SUPABASE_KEY = os.getenv("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJsdHBweGtneWFzeWZrZnRpbnRuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDA1MzQ0MCwiZXhwIjoyMDg1NjI5NDQwfQ.ezQikofIISwy-Z3oMc5NrMnWF6DB3qe8srDApH9OpF8")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def get_enabled_sources():
-    res = supabase.table("sources").select("*").eq("enabled", True).execute()
-    return res.data
+    res = supabase.table("sources").select("*").eq("is_active", True).execute()
+    return res.data or []
 
 def save_news(item):
     supabase.table("news").upsert(item, on_conflict="hash").execute()
