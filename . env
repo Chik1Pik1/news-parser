@@ -1,0 +1,5 @@
+SUPABASE_URL=https://rltppxkgyasyfkftintn.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJsdHBweGtneWFzeWZrZnRpbnRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwNTM0NDAsImV4cCI6MjA4NTYyOTQ0MH0.98RP1Ci9UFkjhKbi1woyW5dbRbXJ8qNdopM1aJMSdf4
+TG_API_ID=35403447
+TG_API_HASH=267207c9f124557a7323b56a63a073ab
+TG_BOT_TOKEN=  # можно оставить пустым, если не используем бота
