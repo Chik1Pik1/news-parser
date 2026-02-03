@@ -1,10 +1,10 @@
+import os
+import requests
+from bs4 import BeautifulSoup
 from db import get_enabled_sources, save_news
 from sources.rss import parse_rss
 from sources.site import parse_site
-import requests
-from bs4 import BeautifulSoup
 
-# Telegram-парсер (если установлен)
 try:
     from sources.telegram import parse_telegram
     TELEGRAM_ENABLED = True
@@ -12,29 +12,18 @@ except ImportError:
     TELEGRAM_ENABLED = False
 
 def fetch_full_text(url):
-    """Получаем полный текст новости с сайта по ссылке"""
+    """ Получаем полный текст статьи с сайта """
     try:
         r = requests.get(url, timeout=10)
+        r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # Сначала ищем <article>, если нет — самый длинный <div>
-        article = soup.find("article")
-        if not article:
-            divs = soup.find_all("div")
-            if divs:
-                article = max(divs, key=lambda d: len(d.get_text()))
-            else:
-                return None
-
-        # Удаляем лишние теги
-        for tag in article(["script", "style", "aside", "nav"]):
-            tag.decompose()
-
-        text = article.get_text(separator="\n", strip=True)
-        return text
+        paragraphs = soup.find_all("p")
+        full_text = "\n\n".join(p.get_text() for p in paragraphs if p.get_text().strip())
+        return full_text
     except Exception as e:
-        print("❌ Не удалось получить полный текст:", url, e)
-        return None
+        print("❌ Ошибка при fetch_full_text:", e)
+        return ""
 
 def run():
     sources = get_enabled_sources()
@@ -68,15 +57,13 @@ def run():
                 continue
 
             for item in items:
-                try:
-                    # Для RSS и сайтов получаем полный текст
-                    if source["type"] in ["rss", "site"] and item.get("url"):
-                        full_text = fetch_full_text(item["url"])
-                        item["content"] = full_text or item.get("summary", "")
-                    # Для Telegram используем текст поста
-                    elif source["type"] == "telegram":
-                        item["content"] = item.get("summary", "")
+                # Получаем полный текст статьи
+                if "url" in item and item["url"]:
+                    full_text = fetch_full_text(item["url"])
+                    if full_text:
+                        item["summary"] = full_text  # сохраняем полный текст в summary
 
+                try:
                     save_news(item)
                     total_saved += 1
                     print("✅ Сохранили:", item["title"][:80])
