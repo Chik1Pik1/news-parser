@@ -1,4 +1,3 @@
-# main.py
 from db import get_enabled_sources, save_news
 from sources.rss import parse_rss
 from sources.site import parse_site
@@ -10,13 +9,13 @@ try:
 except ImportError:
     TELEGRAM_ENABLED = False
 
-import traceback
-
 def run():
     sources = get_enabled_sources()
     if not sources:
         print("Нет включённых источников для парсинга")
         return
+
+    total_saved = 0
 
     for source in sources:
         try:
@@ -29,12 +28,7 @@ def run():
                 items = parse_site(source)
             elif source["type"] == "telegram":
                 if TELEGRAM_ENABLED:
-                    try:
-                        items = parse_telegram(source)
-                    except Exception as e:
-                        print("Ошибка в Telegram парсере:", e)
-                        traceback.print_exc()
-                        continue
+                    items = parse_telegram(source)
                 else:
                     print("Telegram-парсер отключён, пропускаем")
                     continue
@@ -46,22 +40,22 @@ def run():
                 print("Ничего не найдено для источника:", source.get("name"))
                 continue
 
-            # 🔹 Сохраняем новости
+            # Сохраняем все новости
             for item in items:
                 try:
                     save_news(item)
+                    total_saved += 1
+                    print("✅ Сохранили:", item["title"][:80])
                 except Exception as e:
-                    print("Ошибка при save_news:", e)
-                    traceback.print_exc()
+                    print("❌ Ошибка при сохранении новости:", e)
 
         except Exception as e:
-            print("Ошибка при парсинге источника:", source.get("name"))
-            traceback.print_exc()
+            print("❌ Ошибка при парсинге источника:", source.get("name"), e)
+
+    print(f"\nПарсинг завершён. Сохранено новостей: {total_saved}")
 
 if __name__ == "__main__":
     try:
         run()
-        print("\nПарсинг завершён успешно")
     except Exception as e:
-        print("Ошибка в основном цикле парсера:", e)
-        traceback.print_exc()
+        print("❌ Ошибка в основном цикле парсера:", e)
