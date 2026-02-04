@@ -6,7 +6,7 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 from supabase import create_client, Client
-from dedup import make_hash  # оставляем для site parser
+from dedup import make_hash  # для HTML парсера
 
 # --- Настройки Supabase ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -32,7 +32,7 @@ RSS_SOURCES = {
     ]
 }
 
-# --- Функция для очистки HTML ---
+# --- Очистка HTML ---
 def clean_html(raw_html):
     if not raw_html:
         return ""
@@ -68,8 +68,6 @@ def parse_rss():
                     pub_date = datetime.utcnow()
 
                 news_hash = generate_hash(title, summary, link)
-
-                # Ограничиваем текст до ~300 символов
                 short_summary = summary[:300] + ("..." if len(summary) > 300 else "")
 
                 news_item = {
@@ -124,11 +122,17 @@ def parse_sites(sources):
             print(f"❌ Ошибка при парсинге сайта {source['name']}: {e}")
     return all_news
 
-# --- Сохранение новостей в Supabase ---
+# --- Сохранение новостей в Supabase с проверкой дубликатов ---
 def save_news(news_list):
     saved = 0
     for item in news_list:
         try:
+            # Проверяем, есть ли такой хэш
+            existing = supabase.table("news").select("id").eq("hash", item["hash"]).execute()
+            if existing.data and len(existing.data) > 0:
+                continue  # Уже есть — пропускаем
+
+            # Вставляем только новые
             response = supabase.table("news").insert(item).execute()
             if hasattr(response, "error") and response.error:
                 continue
