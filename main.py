@@ -6,8 +6,7 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 from supabase import create_client, Client
-from dedup import make_hash
-from telegram import parse_telegram  # если используешь Telegram парсер
+from dedup import make_hash  # оставляем для site parser
 
 # --- Настройки Supabase ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -129,7 +128,6 @@ def parse_sites(sources):
 def save_news(news_list):
     saved = 0
     for item in news_list:
-        # Проверка на дубликат (Supabase уже имеет unique index)
         try:
             response = supabase.table("news").insert(item).execute()
             if hasattr(response, "error") and response.error:
@@ -143,7 +141,6 @@ def save_news(news_list):
 def main():
     all_news = parse_rss()
     # Если есть сайты, можно добавить: all_news += parse_sites(site_sources)
-    # Если используем Telegram: all_news += parse_telegram(telegram_sources)
     save_news(all_news)
 
 if __name__ == "__main__":
