@@ -2,37 +2,21 @@ import os
 import hashlib
 import re
 from datetime import datetime
-import feedparser
 from supabase import create_client, Client
 from dedup import make_hash
-from parser_site import parse_site            # исправленный импорт
-from telegram import parse_telegram
-from sites import sites as site_sources        # твои сайты
-from telegram_sources import telegram_sources # твои Telegram-каналы
+
+# --- Импорты из папки sources ---
+from sources.parser_site import parse_site
+from sources.telegram import parse_telegram
+from sources.rss import parse_rss
+
+from sites import sites as site_sources              # твои сайты
+from telegram_sources import telegram_sources       # твои Telegram-каналы
 
 # --- Настройки Supabase ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# --- RSS Источники ---
-RSS_SOURCES = {
-    "war": [
-        "https://ria.ru/export/rss2/defense.xml",
-        "https://tass.ru/rss/v2.xml"
-    ],
-    "economy": [
-        "https://www.vedomosti.ru/rss/news",
-        "https://www.rbc.ru/rss/newsline.xml"
-    ],
-    "crypto": [],
-    "world": [
-        "https://ria.ru/export/rss2/world.xml"
-    ],
-    "tech": [
-        "https://ria.ru/export/rss2/science.xml"
-    ]
-}
 
 # --- Очистка HTML ---
 def clean_html(raw_html):
@@ -46,45 +30,7 @@ def generate_hash(title, summary, url):
     text = (title + summary + (url or "")).encode("utf-8")
     return hashlib.sha256(text).hexdigest()
 
-# --- Парсинг RSS ---
-def parse_rss():
-    all_news = []
-    for category_slug, feeds in RSS_SOURCES.items():
-        for url in feeds:
-            print(f"Парсим RSS: {url}")
-            try:
-                feed = feedparser.parse(url)
-            except Exception as e:
-                print(f"❌ Ошибка при парсинге RSS {url}: {e}")
-                continue
-
-            for entry in feed.entries:
-                title = (entry.get("title") or "").strip()
-                link = (entry.get("link") or "").strip()
-                summary = clean_html(entry.get("summary") or entry.get("description") or "")
-
-                pub_date = entry.get("published_parsed") or entry.get("updated_parsed")
-                if pub_date:
-                    pub_date = datetime(*pub_date[:6])
-                else:
-                    pub_date = datetime.utcnow()
-
-                news_hash = generate_hash(title, summary, link)
-                short_summary = summary[:300] + ("..." if len(summary) > 300 else "")
-
-                all_news.append({
-                    "title": title or "Без заголовка",
-                    "summary": short_summary,
-                    "url": link or "Без ссылки",
-                    "media_url": None,
-                    "category_slug": category_slug,
-                    "hash": news_hash,
-                    "published_at": pub_date.isoformat(),
-                    "is_nsfw": False
-                })
-    return all_news
-
-# --- Сохранение в Supabase с проверкой дубликатов ---
+# --- Сохранение новостей с проверкой дубликатов ---
 def save_news(news_list):
     saved = 0
     for item in news_list:
@@ -102,16 +48,23 @@ def save_news(news_list):
 
 # --- Главная функция ---
 def main():
-    all_news = parse_rss()
+    all_news = []
+
+    # --- RSS ---
+    rss_news = parse_rss()
+    all_news += rss_news
 
     # --- HTML сайты ---
     for source in site_sources:
-        all_news += parse_site(source)
+        site_news = parse_site(source)
+        all_news += site_news
 
     # --- Telegram ---
     for source in telegram_sources:
-        all_news += parse_telegram(source)
+        tg_news = parse_telegram(source)
+        all_news += tg_news
 
+    # --- Сохраняем всё в Supabase ---
     save_news(all_news)
 
 if __name__ == "__main__":
