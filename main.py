@@ -1,16 +1,20 @@
-import feedparser
-from datetime import datetime
+import os
 import hashlib
 import re
+from datetime import datetime
+import feedparser
+import requests
+from bs4 import BeautifulSoup
 from supabase import create_client, Client
+from dedup import make_hash
+from telegram import parse_telegram  # если используешь Telegram парсер
 
 # --- Настройки Supabase ---
-SUPABASE_URL = "https://rltppxkgyasyfkftintn.supabase.co"
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJsdHBweGtneWFzeWZrZnRpbnRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwNTM0NDAsImV4cCI6MjA4NTYyOTQ0MH0.98RP1Ci9UFkjhKbi1woyW5dbRbXJ8qNdopM1aJMSdf4"
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-
-# --- Источники новостей по категориям ---
+# --- Источники RSS по категориям ---
 RSS_SOURCES = {
     "war": [
         "https://ria.ru/export/rss2/defense.xml",
@@ -20,9 +24,7 @@ RSS_SOURCES = {
         "https://www.vedomosti.ru/rss/news",
         "https://www.rbc.ru/rss/newsline.xml"
     ],
-    "crypto": [
-        # Можно добавить русские сайты про крипту, например forklog, cointelegraph.ru
-    ],
+    "crypto": [],
     "world": [
         "https://ria.ru/export/rss2/world.xml"
     ],
@@ -33,33 +35,33 @@ RSS_SOURCES = {
 
 # --- Функция для очистки HTML ---
 def clean_html(raw_html):
+    if not raw_html:
+        return ""
     cleanr = re.compile('<.*?>')
-    cleantext = re.sub(cleanr, '', raw_html)
-    return cleantext.strip()
+    return re.sub(cleanr, '', raw_html).strip()
 
-# --- Функция для генерации хэша новости ---
+# --- Генерация хэша ---
 def generate_hash(title, summary, url):
     text = (title + summary + (url or "")).encode("utf-8")
     return hashlib.sha256(text).hexdigest()
 
-# --- Главная функция парсинга ---
-def fetch_and_save_news():
-    total_saved = 0
+# --- Парсинг RSS ---
+def parse_rss():
+    all_news = []
     for category_slug, feeds in RSS_SOURCES.items():
         for url in feeds:
             print(f"Парсим RSS: {url}")
             try:
                 feed = feedparser.parse(url)
             except Exception as e:
-                print("❌ Ошибка при парсинге:", e)
+                print(f"❌ Ошибка при парсинге RSS {url}: {e}")
                 continue
 
-            news_to_save = []
             for entry in feed.entries:
-                title = entry.get("title", "").strip()
-                link = entry.get("link", "").strip()
-                summary = clean_html(entry.get("summary", "") or entry.get("description", ""))
-                
+                title = (entry.get("title") or "").strip()
+                link = (entry.get("link") or "").strip()
+                summary = clean_html(entry.get("summary") or entry.get("description") or "")
+
                 pub_date = entry.get("published_parsed") or entry.get("updated_parsed")
                 if pub_date:
                     pub_date = datetime(*pub_date[:6])
@@ -68,36 +70,81 @@ def fetch_and_save_news():
 
                 news_hash = generate_hash(title, summary, link)
 
-                # --- Проверяем, есть ли уже такой хэш ---
-                existing = supabase.table("news").select("id").eq("hash", news_hash).execute()
-                if existing.data and len(existing.data) > 0:
-                    continue  # уже есть — пропускаем
-
-                # Ограничиваем текст до ~300 символов для "анонса"
-                short_summary = summary
-                if len(summary) > 300:
-                    short_summary = summary[:300] + "..."
+                # Ограничиваем текст до ~300 символов
+                short_summary = summary[:300] + ("..." if len(summary) > 300 else "")
 
                 news_item = {
                     "title": title or "Без заголовка",
-                    "url": link or "Без ссылки",
                     "summary": short_summary,
+                    "url": link or "Без ссылки",
+                    "media_url": None,  # можно добавить, если есть media_content
                     "category_slug": category_slug,
                     "hash": news_hash,
-                    "published_at": pub_date.isoformat()
+                    "published_at": pub_date.isoformat(),
+                    "is_nsfw": False
                 }
 
-                news_to_save.append(news_item)
+                all_news.append(news_item)
+    return all_news
 
-            if news_to_save:
-                response = supabase.table("news").insert(news_to_save).execute()
-                if hasattr(response, "error") and response.error:
-                    print("❌ Ошибка при сохранении:", response.error)
-                else:
-                    total_saved += len(news_to_save)
-                    print(f"✅ Сохранено новостей: {len(news_to_save)}")
+# --- Парсинг сайтов (HTML) ---
+def parse_sites(sources):
+    all_news = []
+    for source in sources:
+        try:
+            resp = requests.get(source["url"], timeout=10)
+            soup = BeautifulSoup(resp.text, "html.parser")
+            selector = source.get("selector")
+            if not selector:
+                continue
 
-    print("Парсинг завершён. Всего сохранено новостей:", total_saved)
+            for a in soup.select(selector):
+                title = a.get_text(strip=True)
+                link = a.get("href")
+                if not title or not link:
+                    continue
+                if not link.startswith("http"):
+                    link = source["url"].rstrip("/") + "/" + link.lstrip("/")
+
+                news_hash = make_hash(title, link)
+                img = a.find("img")
+                media_url = img["src"] if img else None
+
+                news_item = {
+                    "title": title,
+                    "summary": "",
+                    "url": link,
+                    "media_url": media_url,
+                    "category_slug": source["category_slug"],
+                    "hash": news_hash,
+                    "published_at": None,
+                    "is_nsfw": False
+                }
+                all_news.append(news_item)
+        except Exception as e:
+            print(f"❌ Ошибка при парсинге сайта {source['name']}: {e}")
+    return all_news
+
+# --- Сохранение новостей в Supabase ---
+def save_news(news_list):
+    saved = 0
+    for item in news_list:
+        # Проверка на дубликат (Supabase уже имеет unique index)
+        try:
+            response = supabase.table("news").insert(item).execute()
+            if hasattr(response, "error") and response.error:
+                continue
+            saved += 1
+        except Exception as e:
+            print(f"❌ Ошибка при вставке новости: {e}")
+    print(f"✅ Всего сохранено новостей: {saved}")
+
+# --- Главная функция ---
+def main():
+    all_news = parse_rss()
+    # Если есть сайты, можно добавить: all_news += parse_sites(site_sources)
+    # Если используем Telegram: all_news += parse_telegram(telegram_sources)
+    save_news(all_news)
 
 if __name__ == "__main__":
-    fetch_and_save_news()
+    main()
