@@ -3,17 +3,19 @@ import hashlib
 import re
 from datetime import datetime
 import feedparser
-import requests
-from bs4 import BeautifulSoup
 from supabase import create_client, Client
-from dedup import make_hash  # для HTML парсера
+from dedup import make_hash
+from site import parse_site
+from telegram import parse_telegram
+from sites import sites as site_sources  # твои сайты
+from telegram_sources import telegram_sources  # твои каналы
 
 # --- Настройки Supabase ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- Источники RSS по категориям ---
+# --- RSS Источники ---
 RSS_SOURCES = {
     "war": [
         "https://ria.ru/export/rss2/defense.xml",
@@ -70,69 +72,26 @@ def parse_rss():
                 news_hash = generate_hash(title, summary, link)
                 short_summary = summary[:300] + ("..." if len(summary) > 300 else "")
 
-                news_item = {
+                all_news.append({
                     "title": title or "Без заголовка",
                     "summary": short_summary,
                     "url": link or "Без ссылки",
-                    "media_url": None,  # можно добавить, если есть media_content
+                    "media_url": None,
                     "category_slug": category_slug,
                     "hash": news_hash,
                     "published_at": pub_date.isoformat(),
                     "is_nsfw": False
-                }
-
-                all_news.append(news_item)
+                })
     return all_news
 
-# --- Парсинг сайтов (HTML) ---
-def parse_sites(sources):
-    all_news = []
-    for source in sources:
-        try:
-            resp = requests.get(source["url"], timeout=10)
-            soup = BeautifulSoup(resp.text, "html.parser")
-            selector = source.get("selector")
-            if not selector:
-                continue
-
-            for a in soup.select(selector):
-                title = a.get_text(strip=True)
-                link = a.get("href")
-                if not title or not link:
-                    continue
-                if not link.startswith("http"):
-                    link = source["url"].rstrip("/") + "/" + link.lstrip("/")
-
-                news_hash = make_hash(title, link)
-                img = a.find("img")
-                media_url = img["src"] if img else None
-
-                news_item = {
-                    "title": title,
-                    "summary": "",
-                    "url": link,
-                    "media_url": media_url,
-                    "category_slug": source["category_slug"],
-                    "hash": news_hash,
-                    "published_at": None,
-                    "is_nsfw": False
-                }
-                all_news.append(news_item)
-        except Exception as e:
-            print(f"❌ Ошибка при парсинге сайта {source['name']}: {e}")
-    return all_news
-
-# --- Сохранение новостей в Supabase с проверкой дубликатов ---
+# --- Сохранение в Supabase с проверкой дубликатов ---
 def save_news(news_list):
     saved = 0
     for item in news_list:
         try:
-            # Проверяем, есть ли такой хэш
             existing = supabase.table("news").select("id").eq("hash", item["hash"]).execute()
             if existing.data and len(existing.data) > 0:
-                continue  # Уже есть — пропускаем
-
-            # Вставляем только новые
+                continue
             response = supabase.table("news").insert(item).execute()
             if hasattr(response, "error") and response.error:
                 continue
@@ -144,7 +103,8 @@ def save_news(news_list):
 # --- Главная функция ---
 def main():
     all_news = parse_rss()
-    # Если есть сайты, можно добавить: all_news += parse_sites(site_sources)
+    all_news += parse_site(source) for source in site_sources  # HTML сайты
+    all_news += parse_telegram(source) for source in telegram_sources  # Telegram
     save_news(all_news)
 
 if __name__ == "__main__":
