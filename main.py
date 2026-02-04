@@ -7,8 +7,8 @@ from supabase import create_client, Client
 from dedup import make_hash
 from site import parse_site
 from telegram import parse_telegram
-from sites import sites as site_sources  # твои сайты
-from telegram_sources import telegram_sources  # твои каналы
+from sites import sites as site_sources        # твои сайты
+from telegram_sources import telegram_sources # твои каналы
 
 # --- Настройки Supabase ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -103,8 +103,15 @@ def save_news(news_list):
 # --- Главная функция ---
 def main():
     all_news = parse_rss()
-    all_news += parse_site(source) for source in site_sources  # HTML сайты
-    all_news += parse_telegram(source) for source in telegram_sources  # Telegram
+
+    # --- HTML сайты ---
+    for source in site_sources:
+        all_news += parse_site(source)
+
+    # --- Telegram ---
+    for source in telegram_sources:
+        all_news += parse_telegram(source)
+
     save_news(all_news)
 
 if __name__ == "__main__":
