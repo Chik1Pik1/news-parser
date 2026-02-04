@@ -5,10 +5,10 @@ from datetime import datetime
 import feedparser
 from supabase import create_client, Client
 from dedup import make_hash
-from site import parse_site
+from parser_site import parse_site            # исправленный импорт
 from telegram import parse_telegram
 from sites import sites as site_sources        # твои сайты
-from telegram_sources import telegram_sources # твои каналы
+from telegram_sources import telegram_sources # твои Telegram-каналы
 
 # --- Настройки Supabase ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
